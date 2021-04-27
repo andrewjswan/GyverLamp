@@ -56,6 +56,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 
 class GyverLamp(LightEntity):
+    _available = False
     _brightness = None
     _effect = None
     _effects = None
@@ -68,6 +69,9 @@ class GyverLamp(LightEntity):
         self._unique_id = unique_id
 
         self.update_config(config)
+
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(5)
 
     @property
     def should_poll(self):
@@ -106,6 +110,10 @@ class GyverLamp(LightEntity):
         return self._is_on
 
     @property
+    def available(self):
+        return self._available
+
+    @property
     def device_info(self):
         """
         https://developers.home-assistant.io/docs/device_registry_index/
@@ -119,6 +127,9 @@ class GyverLamp(LightEntity):
     @property
     def address(self) -> tuple:
         return self._host, 8888
+
+    def debug(self, message):
+        _LOGGER.debug(f"{self._host} | {message}")
 
     def update_config(self, config: dict):
         self._effects = config.get(CONF_EFFECTS, EFFECTS)
@@ -148,27 +159,23 @@ class GyverLamp(LightEntity):
         if not self.is_on:
             payload.append('P_ON')
 
-        _LOGGER.debug("SEND %s", payload)
+        self.debug(f"SEND {payload}")
 
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         for data in payload:
-            sock.sendto(data.encode(), self.address)
-            resp = sock.recv(1024)
-            _LOGGER.debug("RESP %s", resp)
+            self.sock.sendto(data.encode(), self.address)
+            resp = self.sock.recv(1024)
+            self.debug(f"RESP {resp}")
 
     def turn_off(self, **kwargs):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.sendto(b'P_OFF', self.address)
-        resp = sock.recv(1024)
-        _LOGGER.debug("RESP %s", resp)
+        self.sock.sendto(b'P_OFF', self.address)
+        resp = self.sock.recv(1024)
+        self.debug(f"RESP {resp}")
 
     def update(self):
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.settimeout(5)
-            sock.sendto(b'GET', self.address)
-            data = sock.recv(1024).decode().split(' ')
-            _LOGGER.debug("UPDATE %s", data)
+            self.sock.sendto(b'GET', self.address)
+            data = self.sock.recv(1024).decode().split(' ')
+            self.debug(f"UPDATE {data}")
             # bri eff spd sca pow
             i = int(data[1])
             self._effect = self._effects[i] if i < len(self._effects) else None
@@ -176,5 +183,8 @@ class GyverLamp(LightEntity):
             self._hs_color = (float(data[4]) / 100.0 * 360.0,
                               float(data[3]) / 255.0 * 100.0)
             self._is_on = data[5] == '1'
-        except:
-            pass
+            self._available = True
+
+        except Exception as e:
+            self.debug(f"Can't update: {e}")
+            self._available = False
