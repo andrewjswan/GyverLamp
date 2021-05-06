@@ -1,7 +1,7 @@
 {
   "domain": "gyverlamp",
   "name": "GyverLamp",
-  "version": "1.0.1",
+  "version": "v1.84.1",
   "config_flow": true,
   "documentation": "https://github.com/AlexxIT/GyverLamp",
   "dependencies": [],
